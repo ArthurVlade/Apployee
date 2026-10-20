@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "regions": ["iad1", "fra1"],
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "functions": {
+    "app/api/**/*": {
+      "maxDuration": 30
+    }
+  }
+}

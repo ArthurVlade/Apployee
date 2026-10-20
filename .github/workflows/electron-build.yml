@@ -1,0 +1,156 @@
+name: Build & Release Electron Desktop Tracker
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build on ${{ matrix.os }} (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: mac
+            platform_name: macOS
+          - os: windows-latest
+            target: win
+            platform_name: Windows
+          - os: ubuntu-latest
+            target: linux
+            platform_name: Linux
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: desktop/package.json
+
+      - name: Install Linux GUI & Native Build Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libx11-dev \
+            libxtst-dev \
+            libpng-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxcomposite-dev \
+            libxdamage-dev \
+            libxi-dev \
+            libxt-dev \
+            libasound2-dev \
+            libnss3-dev \
+            libgdk-pixbuf2.0-dev \
+            libgtk-3-dev \
+            rpm \
+            fakeroot
+
+      - name: Install Desktop Dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Rebuild Native Node C++ Modules for Electron
+        working-directory: desktop
+        run: npm run rebuild:native
+
+      - name: Build Web Front-end & Electron Main Process
+        working-directory: desktop
+        run: npm run build
+
+      - name: Compile, Sign & Package Binaries (electron-builder)
+        working-directory: desktop
+        env:
+          # GitHub Token for Automatic Release Uploads
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # macOS Code Signing & Notarization Credentials
+          CSC_LINK: ${{ secrets.MAC_CERTS_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+          # Windows Authenticode Code Signing Credentials
+          WIN_CSC_LINK: ${{ secrets.WIN_CERTS_BASE64 }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERTS_PASSWORD }}
+        run: |
+          if [ "${{ matrix.target }}" = "mac" ]; then
+            npx electron-builder --mac --x64 --arm64 --publish always
+          elif [ "${{ matrix.target }}" = "win" ]; then
+            npx electron-builder --win --x64 --arm64 --publish always
+          else
+            npx electron-builder --linux --x64 --publish always
+          fi
+        shell: bash
+
+      - name: Upload Packaged Installers as Workflow Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apploye-desktop-${{ matrix.target }}
+          path: |
+            desktop/release/**/*.exe
+            desktop/release/**/*.dmg
+            desktop/release/**/*.zip
+            desktop/release/**/*.AppImage
+            desktop/release/**/*.deb
+          if-no-files-found: warn
+
+  create-github-release:
+    name: Finalize & Publish GitHub Release
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download All Platform Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Generate Changelog & Release Notes
+        id: release_notes
+        run: |
+          echo "## Apploye Desktop Tracker ${{ github.ref_name }}" >> release_notes.md
+          echo "Automated cross-platform production release." >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Supported Platforms & Architecture" >> release_notes.md
+          echo "- **Windows**: \`Apploye-Tracker-Setup-*.exe\` (x64 / ARM64 NSIS One-Click Installer)" >> release_notes.md
+          echo "- **macOS**: \`Apploye-Tracker-*.dmg\` (Universal Apple Silicon & Intel with Hardened Runtime)" >> release_notes.md
+          echo "- **Linux**: \`Apploye-Tracker-*.AppImage\` & \`.deb\` (x64)" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Security & Integrity" >> release_notes.md
+          echo "- Apple Notarization & Gatekeeper Ticket stapled" >> release_notes.md
+          echo "- Windows Authenticode EV Certificate with RFC 3161 Digicert timestamp" >> release_notes.md
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          files: |
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

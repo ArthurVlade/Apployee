@@ -1,0 +1,36 @@
+appId: com.apploye.tracker
+productName: Apploye Tracker
+copyright: Copyright © 2026 Apploye Inc. All rights reserved.
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+
+asar: true
+
+electronVersion: "31.3.1"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: zip
+      arch:
+        - x64
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Apploye Tracker
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  artifactName: Apploye-Tracker-Setup-${version}.${ext}

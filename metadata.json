@@ -1,0 +1,6 @@
+{
+  "name": "Apploye SaaS - Time Tracking, Monitoring & Payroll",
+  "description": "Production-grade time tracking, employee monitoring, screenshot audit, timesheet approval, shift scheduling, and payroll SaaS platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
